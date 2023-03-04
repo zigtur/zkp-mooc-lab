@@ -145,8 +145,21 @@ template LessThan(n) {
 template CheckBitLength(b) {
     signal input in;
     signal output out;
+    signal bits[b];
+    signal inv;
+    var bitsum = 0;
+    var calc=0;
 
     // TODO
+    for (var i = 0; i < b; i++) {
+        bits[i] <-- (in >> i) & 1;
+        bits[i] * (bits[i] - 1) === 0;
+        bitsum = bitsum + 2 ** i * bits[i];
+    }
+
+    inv <-- 1/ (bitsum - in);
+    calc = ((inv*(bitsum - in))+1) % 2;
+    out <-- calc;
 }
 
 /*
