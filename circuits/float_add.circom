@@ -211,12 +211,18 @@ template RightShift(shift) {
     signal input x;
     signal output y;
 
-    // TODO
-    for (var i = shift; i < b; i++) {
-        inBits[i] <-- (in >> i) & 1;
-        inBits[i] * (1 - inBits[i]) === 0;
-    }
-    y <== x >> shift;
+    signal shiftedX <-- x >> shift;
+
+    // if x is shifted by 'shift' bits
+    // then the shifted bits that disappears must be less than 2^(shift+1)
+
+    signal shiftedBits <-- x - (shiftedX << shift);
+    component lessThan = LessThan(shift+1);
+    lessThan.in[0] <== shiftedBits;
+    lessThan.in[1] <== (1 << (shift+1));
+    lessThan.out === 1;
+
+    y <== shiftedX;
 }
 
 /*
