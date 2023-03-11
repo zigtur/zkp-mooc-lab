@@ -213,6 +213,10 @@ template RightShift(b, shift) {
     signal input x;
     signal output y;
 
+    component x_length_validity = CheckBitLength(b);
+    x_length_validity.in <== x;
+    1 === x_length_validity.out;
+
     signal shiftedX <-- x >> shift;
 
     // if x is shifted by 'shift' bits
@@ -285,20 +289,23 @@ template LeftShift(shift_bound) {
     signal output y;
 
     component isEqual[shift_bound];
-    var sum = 0;
+    var multiplication = 0;
 
     for (var i = 0; i < shift_bound; i++) {
         isEqual[i] = IsEqual();
 
         isEqual[i].in[0] <== i;
         isEqual[i].in[1] <== shift;
-        sum += isEqual[i].out * (1<<i);
+        multiplication += isEqual[i].out * (1<<i);
     }
 
-    y <== sum * x;
+    // calculating y
+    y <== multiplication * x;
 
     var shift_bound_bit = 0;
-    while ((1<<shift_bound_bit) <= shift_bound) shift_bound_bit++;
+    while ((1<<shift_bound_bit) <= shift_bound) {
+        shift_bound_bit++;
+    }
 
     component Compare = LessThan(shift_bound_bit);
     shift ==> Compare.in[0];
@@ -327,6 +334,58 @@ template MSNZB(b) {
     signal output one_hot[b];
 
     // TODO
+    signal inBits[b];
+    component n2b = Num2Bits(b);
+    n2b.in <== in;
+    inBits <== n2b.bits;
+
+
+
+    // inspired from zhuhl98
+    signal prod[b];
+    prod[b-1] <== 1;
+    for (var i = b-2; i >= 0; i--) {
+        prod[i] <== prod[i+1] * (1 - inBits[i+1]);
+    }
+
+    for (var i = 0; i < b; i++)
+        one_hot[i] <== inBits[i] * prod[i];
+
+    
+    component checker = IfThenElse();
+    checker.cond <== skip_checks;
+    checker.L <== 0;
+    checker.R <== prod[0]*(1-inBits[0]);
+
+    checker.out === 0;
+    
+
+
+
+    /*//component lessThanCompare = LessThan(b);
+    var save_i = 0;
+    var tmp;
+    var vinBits = in;
+
+    // Possible to rightshift i times, then compare with 1 --> 
+    for (var i = b-1; i >= 0; i--) {
+        tmp = 1 << i;
+        if (save_i == 0 && tmp & vinBits) {
+            save_i = i;
+        }
+    }
+
+    signal msnzb <-- 1 << save_i;
+    component lessThanCompare = LessThan(b);
+    lessThanCompare.in[0] <== msnzb;
+    lessThanCompare.in[1] <== (in / 2);
+    0 === lessThanCompare.out;
+
+    one_hot[save_i] <-- 1 << save_i;*/
+
+
+
+
 }
 
 /*
@@ -344,7 +403,20 @@ template Normalize(k, p, P) {
     signal output m_out;
     assert(P > p);
 
-    // TODO
+    component msnzb = MSNZB(P+1);
+    msnzb.in <== m;
+    msnzb.skip_checks <== skip_checks;
+    
+    var e_delta = 0;
+    var m_factor = 0;
+
+    for (var i = 0; i <= P; i++) {
+        e_delta += msnzb.one_hot[i]*i;
+        m_factor += msnzb.one_hot[i]*(1<<(P-i));
+    }
+
+    e_out <== e + e_delta - p;
+    m_out <== m_factor * m;
 }
 
 /*
@@ -360,5 +432,102 @@ template FloatAdd(k, p) {
     signal output e_out;
     signal output m_out;
 
-    // TODO
+    /*
+     * check well-formedness
+     */
+    component checker[2];
+
+    for (var i = 0; i < 2; i++) {
+        checker[i] = CheckWellFormedness(k, p);
+        checker[i].e <== e[i];
+        checker[i].m <== m[i];
+    }
+
+    /*
+     * comparing e[1] || m[1] against e[2] || m[2] suffices to compare magnitudes.
+     */
+
+    component Compare = LessThan(k+p+1);
+    for (var i = 0; i < 2; i++) {
+        Compare.in[i] <== m[i] + e[i] * (1<<(p+1));
+    }
+
+    component eSwitcher = Switcher(); 
+    component mSwitcher = Switcher();
+    
+    eSwitcher.sel <== Compare.out;
+    eSwitcher.L <== e[0];
+    eSwitcher.R <== e[1];
+
+    mSwitcher.sel <== Compare.out;
+    mSwitcher.L <== m[0];
+    mSwitcher.R <== m[1];
+
+    var alpha_m = mSwitcher.outL;
+    var alpha_e = eSwitcher.outL;
+    var beta_m = mSwitcher.outR;
+    var beta_e = eSwitcher.outR;
+
+    /*
+     *  Check whether diff > p+1 or alpha_e == 0
+     */
+    signal diff <== alpha_e - beta_e;
+
+    component diff_check = LessThan(k);
+    diff_check.in[0] <== p+1;
+    diff_check.in[1] <== diff;
+
+    component alpha_e_check = IsZero();
+    alpha_e_check.in <== alpha_e;
+
+    component or_check = OR();
+    or_check.a <== diff_check.out;
+    or_check.b <== alpha_e_check.out;
+    
+    component if_else_alpha_m = IfThenElse();
+    if_else_alpha_m.cond <== or_check.out;
+    if_else_alpha_m.L <== 1;
+    if_else_alpha_m.R <== alpha_m;
+
+    component if_else_diff = IfThenElse();
+    if_else_diff.cond <== or_check.out;
+    if_else_diff.L <== 0;
+    if_else_diff.R <== diff;
+
+    component if_else_beta_e = IfThenElse();
+    if_else_beta_e.cond <== or_check.out;
+    if_else_beta_e.L <== 1;
+    if_else_beta_e.R <== beta_e;
+    /*
+     *  adding two floating-point numbers
+     */
+
+    component m_alpha_left_shift = LeftShift(p+2);
+    m_alpha_left_shift.x <== if_else_alpha_m.out;
+    m_alpha_left_shift.shift <== if_else_diff.out;
+    m_alpha_left_shift.skip_checks <== 0;
+
+    component normalize = Normalize(k, p, 2*p+1);
+    normalize.e <== if_else_beta_e.out;
+    normalize.m <== m_alpha_left_shift.y + beta_m;
+    normalize.skip_checks <== 0;
+
+    component round = RoundAndCheck(k, p, 2*p+1);
+    round.e <== normalize.e_out;
+    round.m <== normalize.m_out;
+
+
+    component if_else_m = IfThenElse();
+    if_else_m.cond <== or_check.out;
+    if_else_m.L <== alpha_m;
+    if_else_m.R <== round.m_out;
+
+    component if_else_e = IfThenElse();
+    if_else_e.cond <== or_check.out;
+    if_else_e.L <== alpha_e;
+    if_else_e.R <== round.e_out;
+
+    e_out <== if_else_e.out;
+    m_out <== if_else_m.out;
+
 }
