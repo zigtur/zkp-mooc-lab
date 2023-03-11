@@ -282,7 +282,34 @@ template LeftShift(shift_bound) {
     signal input skip_checks;
     signal output y;
 
-    // TODO
+    component isEqual[shift_bound];
+    var sum = 0;
+
+    for (var i = 0; i < shift_bound; i++) {
+        isEqual[i] = IsEqual();
+
+        isEqual[i].in[0] <== i;
+        isEqual[i].in[1] <== shift;
+        sum += isEqual[i].out * (1<<i);
+    }
+
+    y <== sum * x;
+
+    var shift_bound_bit = 0;
+    while ((1<<shift_bound_bit) <= shift_bound) shift_bound_bit++;
+
+    component Compare = LessThan(shift_bound_bit);
+    shift ==> Compare.in[0];
+    shift_bound ==> Compare.in[1];   
+
+    component checker = IfThenElse();
+    checker.cond <== skip_checks;
+    checker.L <== 1;
+    checker.R <== Compare.out;
+
+    checker.out === 1;
+
+    // can be improved
 }
 
 /*
