@@ -147,20 +147,20 @@ template CheckBitLength(b) {
     signal input in;
     signal output out;
     signal inBits[b];
-    signal inv;
-    var bitsum = 0;
-    var calc=0;
 
     // TODO
+    // Get the in value as a b bits array
     for (var i = 0; i < b; i++) {
         inBits[i] <-- (in >> i) & 1;
         inBits[i] * (1 - inBits[i]) === 0;
     }
 
+    // Get the b bits array into a number
     component B2n = Bits2Num(b);
     B2n.bits <== inBits;
     signal inTested <== B2n.out;
 
+    // Verify that the resulting number of b bits array equals `in`
     component isZero = IsZero();
     isZero.in <== in - inTested;
 
@@ -197,6 +197,7 @@ template CheckWellFormedness(k, p) {
     // choose the right checks based on `is_e_zero`
     component if_else = IfThenElse();
     if_else.cond <== is_e_zero.out;
+    // if `is_e_zero` true, then `is_m_zero` true
     if_else.L <== is_m_zero.out;
     //// check_m_bits.out * check_e_bits.out is equivalent to check_m_bits.out AND check_e_bits.out
     if_else.R <== check_m_bits.out * check_e_bits.out;
@@ -288,6 +289,26 @@ template LeftShift(shift_bound) {
     signal input skip_checks;
     signal output y;
 
+    // skip_checks processing
+    var shift_bound_bit = 0;
+    while ((1<<shift_bound_bit) <= shift_bound) {
+        shift_bound_bit++;
+    }
+
+    component Compare = LessThan(shift_bound_bit);
+    shift ==> Compare.in[0];
+    shift_bound ==> Compare.in[1];   
+
+    component checker = IfThenElse();
+    checker.cond <== skip_checks;
+    // if `skip_checks` true, return true
+    checker.L <== 1;
+    // else, return comparison
+    checker.R <== Compare.out;
+
+    checker.out === 1;
+
+    // y calculation
     component isEqual[shift_bound];
     var multiplication = 0;
 
@@ -302,21 +323,7 @@ template LeftShift(shift_bound) {
     // calculating y
     y <== multiplication * x;
 
-    var shift_bound_bit = 0;
-    while ((1<<shift_bound_bit) <= shift_bound) {
-        shift_bound_bit++;
-    }
-
-    component Compare = LessThan(shift_bound_bit);
-    shift ==> Compare.in[0];
-    shift_bound ==> Compare.in[1];   
-
-    component checker = IfThenElse();
-    checker.cond <== skip_checks;
-    checker.L <== 1;
-    checker.R <== Compare.out;
-
-    checker.out === 1;
+    
 
     // can be improved
 }
