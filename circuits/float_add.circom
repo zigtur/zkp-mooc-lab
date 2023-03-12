@@ -293,6 +293,8 @@ template LeftShift(shift_bound) {
 
     // skip_checks processing
     var shift_bound_bit = 0;
+    //Get the bit that gives a number greater than shift_bound value
+    // For example, if shift_bound = 25, then shift_bound_bit = 5, because 2^5 = 32 and 32 > 25
     while ((1<<shift_bound_bit) <= shift_bound) {
         shift_bound_bit++;
     }
@@ -367,33 +369,6 @@ template MSNZB(b) {
     checker.R <== prod[0]*(1-inBits[0]);
 
     checker.out === 0;
-    
-
-
-
-    /*//component lessThanCompare = LessThan(b);
-    var save_i = 0;
-    var tmp;
-    var vinBits = in;
-
-    // Possible to rightshift i times, then compare with 1 --> 
-    for (var i = b-1; i >= 0; i--) {
-        tmp = 1 << i;
-        if (save_i == 0 && tmp & vinBits) {
-            save_i = i;
-        }
-    }
-
-    signal msnzb <-- 1 << save_i;
-    component lessThanCompare = LessThan(b);
-    lessThanCompare.in[0] <== msnzb;
-    lessThanCompare.in[1] <== (in / 2);
-    0 === lessThanCompare.out;
-
-    one_hot[save_i] <-- 1 << save_i;*/
-
-
-
 
 }
 
@@ -444,13 +419,13 @@ template FloatAdd(k, p) {
     /*
      * check well-formedness
      */
-    component checker[2];
-
-    for (var i = 0; i < 2; i++) {
-        checker[i] = CheckWellFormedness(k, p);
-        checker[i].e <== e[i];
-        checker[i].m <== m[i];
-    }
+    component checkWF0 = CheckWellFormedness(k, p);
+    checkWF0.e <== e[0];
+    checkWF0.m <== m[0];
+    
+    component checkWF1 = CheckWellFormedness(k, p);
+    checkWF1.e <== e[1];
+    checkWF1.m <== m[1];
 
     /*
      * comparing e[1] || m[1] against e[2] || m[2] suffices to compare magnitudes.
